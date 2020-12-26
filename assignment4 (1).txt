@@ -1,0 +1,39 @@
+import numpy as np
+from pyspark import SparkConf, SparkContext
+from pyspark.mllib.classification import SVMWithSGD, SVMModel
+from pyspark.mllib.regression import LabeledPoint
+
+def parsePoint(line):
+    values = [float(x) for x in line.split(',')]
+    return LabeledPoint(values[-1], values[0:-1])
+
+if __name__ == "__main__":
+    sc = SparkContext(appName="PythonSVMWithSGDExample")
+    data = sc.textFile("kmeans_data.csv")
+    parsedRDD = data.map(parsePoint)
+
+    splitFactor = 4
+    testData, trainData = parsedRDD.randomSplit(weights=[1.0/splitFactor, 1 - 1.0/splitFactor])
+
+    model = SVMWithSGD.train(trainData, iterations=70)
+
+    labelsAndPreds = testData.map(lambda p: (p.label, model.predict(p.features)))
+    trainErr = labelsAndPreds.filter(lambda lp: lp[0] != lp[1]).count() / float(testData.count())
+    print("Training Error = " + str(trainErr))
+
+    results = labelsAndPreds.collect()
+    accuracy_count = 0
+    accuracy = 0
+
+    # output in result.txt i-th row: true label, predicted label for i-th data point:
+    with open("SVMWithSparkResults.txt", "w") as f:
+        f.write("true\tpredicted\n")
+        for i in range(len(results)):
+            f.write(str(results[i][0]) + "\t" + str(results[i][1]) + "\n")
+            if int(results[i][0]) == int(results[i][1]):
+                accuracy_count += 1
+    accuracy = accuracy_count / len(results)
+
+    if accuracy < 0.5:  # our predicted label IDs might be opposite
+        accuracy = 1 - accuracy
+    print("accuracy is :", accuracy * 100, "%")
